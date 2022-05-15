@@ -5,7 +5,7 @@
       <el-aside class="main-cont main-left">
         <div class="tilte" :style="{background: backgroundColor}">
           <img alt class="logoimg" :src="$GIN_VUE_ADMIN.appLogo">
-          <h2 v-if="isSider" class="tit-text" :style="{color:textColor}">{{ $GIN_VUE_ADMIN.appName }}</h2>
+          <div v-if="isSider" class="tit-text" :style="{color:textColor}">{{ $GIN_VUE_ADMIN.appName }}</div>
         </div>
         <Aside class="aside" />
       </el-aside>
@@ -200,15 +200,21 @@ const changeUserAuth = async(id) => {
 }
 
 const reloadFlag = ref(true)
+let reloadTimer = null
 const reload = async() => {
-  if (route.meta.keepAlive) {
-    reloadFlag.value = false
-    await nextTick()
-    reloadFlag.value = true
-  } else {
-    const title = route.meta.title
-    router.push({ name: 'Reload', params: { title }})
+  if (reloadTimer) {
+    window.clearTimeout(reloadTimer)
   }
+  reloadTimer = window.setTimeout(async() => {
+    if (route.meta.keepAlive) {
+      reloadFlag.value = false
+      await nextTick()
+      reloadFlag.value = true
+    } else {
+      const title = route.meta.title
+      router.push({ name: 'Reload', params: { title }})
+    }
+  }, 400)
 }
 
 const isShadowBg = ref(false)
