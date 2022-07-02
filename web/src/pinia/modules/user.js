@@ -66,6 +66,7 @@ export const useUserStore = defineStore('user', () => {
           router.addRoute(asyncRouter)
         })
         router.push({ name: userInfo.value.authority.defaultRouter })
+        loadingInstance.value.close()
         return true
       }
     } catch (e) {
@@ -122,7 +123,7 @@ export const useUserStore = defineStore('user', () => {
     return userInfo.activeColor
   })
 
-  watch(token, () => {
+  watch(() => token.value, () => {
     window.localStorage.setItem('token', token.value)
   })
 

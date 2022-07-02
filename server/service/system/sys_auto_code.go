@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go.uber.org/zap"
 	"go/ast"
 	"go/format"
 	"go/parser"
 	"go/token"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 	"io/ioutil"
 	"log"
 	"os"
@@ -47,6 +50,7 @@ type autoPackage struct {
 var (
 	packageInjectionMap map[string]astInjectionMeta
 	injectionPaths      []injectionMeta
+	caser               = cases.Title(language.English)
 )
 
 func Init(Package string) {
@@ -145,6 +149,12 @@ var AutoCodeServiceApp = new(AutoCodeService)
 
 func (autoCodeService *AutoCodeService) PreviewTemp(autoCode system.AutoCodeStruct) (map[string]string, error) {
 	makeDictTypes(&autoCode)
+	for i := range autoCode.Fields {
+		if autoCode.Fields[i].FieldType == "time.Time" {
+			autoCode.HasTimer = true
+			break
+		}
+	}
 	dataList, _, needMkdir, err := autoCodeService.getNeedList(&autoCode)
 	if err != nil {
 		return nil, err
@@ -224,6 +234,12 @@ func makeDictTypes(autoCode *system.AutoCodeStruct) {
 
 func (autoCodeService *AutoCodeService) CreateTemp(autoCode system.AutoCodeStruct, ids ...uint) (err error) {
 	makeDictTypes(&autoCode)
+	for i := range autoCode.Fields {
+		if autoCode.Fields[i].FieldType == "time.Time" {
+			autoCode.HasTimer = true
+			break
+		}
+	}
 	// 增加判断: 重复创建struct
 	if autoCode.AutoMoveFile && AutoCodeHistoryServiceApp.Repeat(autoCode.StructName, autoCode.Package) {
 		return RepeatErr
@@ -618,7 +634,7 @@ func (autoCodeService *AutoCodeService) CreatePackageTemp(packageName string) er
 	// 创建完成后在对应的位置插入结构代码
 	for _, v := range pendingTemp {
 		meta := packageInjectionMap[v.name]
-		if err := ImportReference(meta.path, fmt.Sprintf(meta.importCodeF, v.name, packageName), fmt.Sprintf(meta.structNameF, strings.Title(packageName)), fmt.Sprintf(meta.packageNameF, packageName), meta.groupName); err != nil {
+		if err := ImportReference(meta.path, fmt.Sprintf(meta.importCodeF, v.name, packageName), fmt.Sprintf(meta.structNameF, caser.String(packageName)), fmt.Sprintf(meta.packageNameF, packageName), meta.groupName); err != nil {
 			return err
 		}
 	}
@@ -749,7 +765,7 @@ func (vi *Visitor) addFuncBodyVar(funDecl *ast.FuncDecl) ast.Visitor {
 						},
 					},
 					Sel: &ast.Ident{
-						Name: strings.Title(vi.PackageName),
+						Name: caser.String(vi.PackageName),
 					},
 				},
 			},
@@ -791,12 +807,17 @@ func ImportReference(filepath, importCode, structName, packageName, groupName st
 	return ioutil.WriteFile(filepath, buffer.Bytes(), 0o600)
 }
 
-// 自动创建插件模板
+// CreatePlug 自动创建插件模板
 func (autoCodeService *AutoCodeService) CreatePlug(plug system.AutoPlugReq) error {
+	// 检查列表参数是否有效
+	plug.CheckList()
 	tplFileList, _ := autoCodeService.GetAllTplFile(plugPath, nil)
 	for _, tpl := range tplFileList {
 		temp, err := template.ParseFiles(tpl)
-		fmt.Println(err)
+		if err != nil {
+			zap.L().Error("parse err", zap.String("tpl", tpl), zap.Error(err))
+			return err
+		}
 		pathArr := strings.SplitAfter(tpl, "/")
 		if strings.Index(pathArr[2], "tpl") < 0 {
 			dirPath := filepath.Join(global.GVA_CONFIG.AutoCode.Root, global.GVA_CONFIG.AutoCode.Server, fmt.Sprintf(global.GVA_CONFIG.AutoCode.SPlug, plug.Snake+"/"+pathArr[2]))
@@ -804,10 +825,10 @@ func (autoCodeService *AutoCodeService) CreatePlug(plug system.AutoPlugReq) erro
 		}
 		file := filepath.Join(global.GVA_CONFIG.AutoCode.Root, global.GVA_CONFIG.AutoCode.Server, fmt.Sprintf(global.GVA_CONFIG.AutoCode.SPlug, plug.Snake+"/"+tpl[len(plugPath):len(tpl)-4]))
 		f, _ := os.OpenFile(file, os.O_WRONLY|os.O_CREATE, 0666)
-		e := temp.Execute(f, plug)
-		if e != nil {
-			fmt.Println(e)
-			return e
+		err = temp.Execute(f, plug)
+		if err != nil {
+			zap.L().Error("exec err", zap.String("tpl", tpl), zap.Error(err), zap.Any("plug", plug))
+			return err
 		}
 		defer f.Close()
 	}

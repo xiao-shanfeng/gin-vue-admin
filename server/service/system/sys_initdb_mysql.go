@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
+
 	"github.com/flipped-aurora/gin-vue-admin/server/config"
 	"github.com/gookit/color"
-	"path/filepath"
 
 	"github.com/flipped-aurora/gin-vue-admin/server/utils"
 
@@ -31,11 +32,11 @@ func (h MysqlInitHandler) WriteConfig(ctx context.Context) error {
 	}
 	global.GVA_CONFIG.System.DbType = "mysql"
 	global.GVA_CONFIG.Mysql = c
+	global.GVA_CONFIG.JWT.SigningKey = uuid.NewV4().String()
 	cs := utils.StructToMap(global.GVA_CONFIG)
 	for k, v := range cs {
 		global.GVA_VP.Set(k, v)
 	}
-	global.GVA_VP.Set("jwt.signing-key", uuid.NewV4().String())
 	return global.GVA_VP.WriteConfig()
 }
 
@@ -44,17 +45,19 @@ func (h MysqlInitHandler) EnsureDB(ctx context.Context, conf *request.InitDB) (n
 	if s, ok := ctx.Value("dbtype").(string); !ok || s != "mysql" {
 		return ctx, ErrDBTypeMismatch
 	}
-	dsn := conf.MysqlEmptyDsn()
-	createSql := fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s` DEFAULT CHARACTER SET utf8mb4 DEFAULT COLLATE utf8mb4_general_ci;", conf.DBName)
-	if err = createDatabase(dsn, "mysql", createSql); err != nil {
-		return nil, err
-	} // 创建数据库
 
 	c := conf.ToMysqlConfig()
 	next = context.WithValue(ctx, "config", c)
 	if c.Dbname == "" {
 		return ctx, nil
 	} // 如果没有数据库名, 则跳出初始化数据
+
+	dsn := conf.MysqlEmptyDsn()
+	createSql := fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s` DEFAULT CHARACTER SET utf8mb4 DEFAULT COLLATE utf8mb4_general_ci;", c.Dbname)
+	if err = createDatabase(dsn, "mysql", createSql); err != nil {
+		return nil, err
+	} // 创建数据库
+
 	var db *gorm.DB
 	if db, err = gorm.Open(mysql.New(mysql.Config{
 		DSN:                       c.Dsn(), // DSN data source name
